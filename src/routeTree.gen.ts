@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as ContactRouteImport } from './routes/contact'
 import { Route as KidsZoneRouteImport } from './routes/kids-zone'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as ReservationsRouteImport } from './routes/reservations'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContactRoute = ContactRouteImport.update({
+  id: '/contact',
+  path: '/contact',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KidsZoneRoute = KidsZoneRouteImport.update({
@@ -44,6 +50,7 @@ const ReservationsRoute = ReservationsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/contact': typeof ContactRoute
   '/kids-zone': typeof KidsZoneRoute
   '/menu': typeof MenuRoute
   '/reservations': typeof ReservationsRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/contact': typeof ContactRoute
   '/kids-zone': typeof KidsZoneRoute
   '/menu': typeof MenuRoute
   '/reservations': typeof ReservationsRoute
@@ -59,21 +67,31 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/contact': typeof ContactRoute
   '/kids-zone': typeof KidsZoneRoute
   '/menu': typeof MenuRoute
   '/reservations': typeof ReservationsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/kids-zone' | '/menu' | '/reservations'
+  fullPaths:
+    '/' | '/about' | '/contact' | '/kids-zone' | '/menu' | '/reservations'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/kids-zone' | '/menu' | '/reservations'
-  id: '__root__' | '/' | '/about' | '/kids-zone' | '/menu' | '/reservations'
+  to: '/' | '/about' | '/contact' | '/kids-zone' | '/menu' | '/reservations'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/contact'
+    | '/kids-zone'
+    | '/menu'
+    | '/reservations'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  ContactRoute: typeof ContactRoute
   KidsZoneRoute: typeof KidsZoneRoute
   MenuRoute: typeof MenuRoute
   ReservationsRoute: typeof ReservationsRoute
@@ -93,6 +111,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contact': {
+      id: '/contact'
+      path: '/contact'
+      fullPath: '/contact'
+      preLoaderRoute: typeof ContactRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/kids-zone': {
@@ -122,6 +147,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  ContactRoute: ContactRoute,
   KidsZoneRoute: KidsZoneRoute,
   MenuRoute: MenuRoute,
   ReservationsRoute: ReservationsRoute,
