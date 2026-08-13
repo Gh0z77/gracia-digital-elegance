@@ -14,7 +14,114 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      menu_items: {
+        Row: {
+          available: boolean
+          category: string
+          created_at: string
+          description: string
+          featured: boolean
+          id: string
+          image_url: string
+          name: string
+          price: number
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          available?: boolean
+          category?: string
+          created_at?: string
+          description?: string
+          featured?: boolean
+          id?: string
+          image_url?: string
+          name: string
+          price?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          available?: boolean
+          category?: string
+          created_at?: string
+          description?: string
+          featured?: boolean
+          id?: string
+          image_url?: string
+          name?: string
+          price?: number
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      reservations: {
+        Row: {
+          created_at: string
+          full_name: string
+          guests: number
+          id: string
+          notes: string
+          phone: string
+          reserved_date: string
+          reserved_time: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          full_name: string
+          guests?: number
+          id?: string
+          notes?: string
+          phone: string
+          reserved_date: string
+          reserved_time: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          full_name?: string
+          guests?: number
+          id?: string
+          notes?: string
+          phone?: string
+          reserved_date?: string
+          reserved_time?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      site_settings: {
+        Row: {
+          address: string
+          hero_title: string
+          hours: string
+          id: number
+          instagram: string
+          phone: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string
+          hero_title?: string
+          hours?: string
+          id?: number
+          instagram?: string
+          phone?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          hero_title?: string
+          hours?: string
+          id?: number
+          instagram?: string
+          phone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
