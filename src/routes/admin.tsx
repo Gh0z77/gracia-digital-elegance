@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { motion } from "motion/react";
-import { CalendarDays, LayoutGrid, LogOut, Settings2, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { CalendarDays, LayoutGrid, LogOut, Send, Settings2, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   adminDeleteDish,
   adminGetData,
@@ -16,18 +25,34 @@ import {
   adminSetReservationStatus,
   adminStatus,
 } from "@/lib/admin.functions";
-import { MENU_CATEGORIES, formatSom, type MenuItem } from "@/lib/format";
+import {
+  MENU_CATEGORIES,
+  RESERVATION_STATUSES,
+  formatLongDate,
+  formatSom,
+  todayAtRestaurant,
+  type MenuItem,
+  type Reservation,
+  type ReservationStatus,
+  type SiteSettings,
+} from "@/lib/format";
+import { responsiveImage } from "@/lib/images";
+import { fmt, headDict, useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin")({
-  head: () => ({
-    meta: [
-      { title: "Manager Access — Gracia Family" },
-      { name: "description", content: "Private manager area for Gracia Family Restaurant." },
-      { name: "robots", content: "noindex" },
-      { property: "og:title", content: "Manager Access — Gracia Family" },
-      { property: "og:description", content: "Private manager area." },
-    ],
-  }),
+  head: ({ match }) => {
+    const t = headDict(match);
+    const title = `${t.admin.accessTitle} — Gracia Family`;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: t.admin.accessBody },
+        { name: "robots", content: "noindex, nofollow" },
+        { property: "og:title", content: title },
+        { property: "og:description", content: t.admin.accessBody },
+      ],
+    };
+  },
   component: AdminPage,
 });
 
@@ -36,11 +61,13 @@ const field =
 const btnGold =
   "bg-gold px-6 py-3 text-[0.6rem] tracking-[0.28em] text-primary-foreground uppercase transition-all duration-500 hover:bg-gold-soft disabled:opacity-60";
 const btnGhost =
-  "border border-border px-5 py-2.5 text-[0.6rem] tracking-[0.26em] text-muted-foreground uppercase transition-colors hover:border-gold hover:text-gold";
+  "border border-border px-5 py-2.5 text-[0.6rem] tracking-[0.26em] text-muted-foreground uppercase transition-colors hover:border-gold hover:text-gold disabled:opacity-50";
 
-const EMPTY_DISH = {
+const EMPTY_DISH: Partial<MenuItem> = {
   name: "",
   description: "",
+  description_uz: "",
+  description_ru: "",
   category: "Main Courses",
   price: 0,
   image_url: "",
@@ -50,86 +77,128 @@ const EMPTY_DISH = {
 };
 
 function AdminPage() {
+  const { t } = useI18n();
   const statusFn = useServerFn(adminStatus);
   const status = useQuery({ queryKey: ["admin-status"], queryFn: () => statusFn({}) });
 
   if (status.isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
-        Checking access…
+        {t.admin.checkingAccess}
       </div>
     );
+  }
+
+  if (status.data?.missingConfig?.length) {
+    return <SetupNotice missing={status.data.missingConfig} />;
   }
 
   return status.data?.unlocked ? <Dashboard /> : <Gate />;
 }
 
+/** Setup is an operator problem, not a bug — say exactly what is missing. */
+function SetupNotice({ missing }: { missing: string[] }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex min-h-screen items-center justify-center px-6">
+      <div className="w-full max-w-lg border border-border bg-card p-10">
+        <p className="eyebrow">{t.admin.brand}</p>
+        <h1 className="font-display mt-4 text-3xl">{t.admin.setupTitle}</h1>
+        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{t.admin.setupBody}</p>
+        <ul className="mt-6 space-y-2">
+          {missing.map((key) => (
+            <li key={key} className="border border-destructive/40 px-4 py-2.5 text-sm text-gold">
+              {key}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-6 text-xs leading-relaxed text-muted-foreground">{t.admin.setupHint}</p>
+      </div>
+    </div>
+  );
+}
+
 function Gate() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const login = useServerFn(adminLogin);
   const [passcode, setPasscode] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setError(false);
-    const res = await login({ data: { passcode } });
-    setBusy(false);
-    if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: ["admin-status"] });
-    } else {
-      setError(true);
+    setError(null);
+    try {
+      const res = await login({ data: { passcode } });
+      if (res.ok) {
+        setPasscode("");
+        await queryClient.invalidateQueries({ queryKey: ["admin-status"] });
+        return;
+      }
+      setError(res.reason === "throttled" ? t.admin.throttled : t.admin.wrongPasscode);
+    } catch {
+      setError(t.admin.offline);
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center px-6">
-      <motion.form
+      <form
         onSubmit={onSubmit}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-sm border border-border bg-card p-10"
+        className="panel-enter w-full max-w-sm border border-border bg-card p-10"
       >
-        <p className="eyebrow">Gracia Family</p>
-        <h1 className="font-display mt-4 text-3xl">Manager access</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Enter the restaurant passcode to open the control room.
-        </p>
+        <p className="eyebrow">{t.admin.brand}</p>
+        <h1 className="font-display mt-4 text-3xl">{t.admin.accessTitle}</h1>
+        <p className="mt-3 text-sm text-muted-foreground">{t.admin.accessBody}</p>
+        <label className="sr-only" htmlFor="admin-passcode">
+          {t.admin.passcode}
+        </label>
         <input
+          id="admin-passcode"
           type="password"
           className={`${field} mt-8`}
           value={passcode}
-          maxLength={100}
+          maxLength={200}
           onChange={(e) => setPasscode(e.target.value)}
-          placeholder="Passcode"
+          placeholder={t.admin.passcode}
           autoComplete="current-password"
+          autoFocus
         />
-        {error && <p className="mt-3 text-sm text-destructive">Incorrect passcode.</p>}
-        <button type="submit" disabled={busy} className={`${btnGold} mt-6 w-full`}>
-          {busy ? "Checking…" : "Unlock"}
+        {error && (
+          <p className="mt-3 text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+        <button type="submit" disabled={busy || !passcode} className={`${btnGold} mt-6 w-full`}>
+          {busy ? t.admin.checking : t.admin.unlock}
         </button>
-      </motion.form>
+      </form>
     </div>
   );
 }
 
 function Dashboard() {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const getData = useServerFn(adminGetData);
   const logout = useServerFn(adminLogout);
   const [tab, setTab] = useState<"menu" | "reservations" | "settings">("reservations");
 
-  const { data, isLoading } = useQuery({ queryKey: ["admin-data"], queryFn: () => getData({}) });
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["admin-data"],
+    queryFn: () => getData({}),
+  });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["admin-data"] });
 
   const TABS = [
-    { id: "reservations" as const, label: "Reservations", icon: CalendarDays },
-    { id: "menu" as const, label: "Menu", icon: LayoutGrid },
-    { id: "settings" as const, label: "Settings", icon: Settings2 },
+    { id: "reservations" as const, label: t.admin.tabReservations, icon: CalendarDays },
+    { id: "menu" as const, label: t.admin.tabMenu, icon: LayoutGrid },
+    { id: "settings" as const, label: t.admin.tabSettings, icon: Settings2 },
   ];
 
   return (
@@ -139,19 +208,24 @@ function Dashboard() {
           <div>
             <span className="font-display text-xl tracking-[0.3em] text-gradient-gold">GRACIA</span>
             <span className="ml-3 text-[0.6rem] tracking-[0.3em] text-muted-foreground uppercase">
-              Control room
+              {t.admin.controlRoom}
             </span>
           </div>
           <button
             type="button"
             className={btnGhost}
+            // Drop the cached bookings and carta outright, then force the gate
+            // query to re-run. `clear()` would do the first job but it also
+            // evicts the status query itself, leaving its observer with nothing
+            // to invalidate — the dashboard would stay on screen until a reload.
             onClick={async () => {
               await logout({});
-              queryClient.invalidateQueries({ queryKey: ["admin-status"] });
+              queryClient.removeQueries({ queryKey: ["admin-data"] });
+              await queryClient.refetchQueries({ queryKey: ["admin-status"] });
             }}
           >
             <span className="flex items-center gap-2">
-              <LogOut className="size-3.5" /> Sign out
+              <LogOut className="size-3.5" /> {t.admin.signOut}
             </span>
           </button>
         </div>
@@ -164,6 +238,7 @@ function Dashboard() {
               key={t.id}
               type="button"
               onClick={() => setTab(t.id)}
+              aria-pressed={tab === t.id}
               className={`flex items-center gap-2 border px-5 py-2.5 text-[0.6rem] tracking-[0.26em] uppercase transition-all duration-500 ${
                 tab === t.id
                   ? "border-gold text-gold"
@@ -176,45 +251,115 @@ function Dashboard() {
           ))}
         </div>
 
-        {isLoading && <p className="mt-12 text-sm text-muted-foreground">Loading…</p>}
+        {isLoading && <p className="mt-12 text-sm text-muted-foreground">{t.admin.loading}</p>}
+
+        {isError && (
+          <div className="mt-12 border border-destructive/40 bg-card p-8">
+            <h2 className="font-display text-2xl">{t.admin.loadErrorTitle}</h2>
+            <p className="mt-3 text-sm text-muted-foreground">{t.admin.loadErrorBody}</p>
+            <button type="button" className={`${btnGhost} mt-6`} onClick={() => void refetch()}>
+              {t.admin.retry}
+            </button>
+          </div>
+        )}
 
         {data && tab === "reservations" && (
-          <ReservationsPanel reservations={data.reservations} onChanged={refresh} />
+          <>
+            {/* Silence is ambiguous: an operator has no way to tell a quiet
+                evening from a notifier that was never configured. */}
+            <p
+              className={`mt-8 flex items-center gap-2.5 text-xs ${
+                data.telegramReady ? "text-muted-foreground" : "text-gold"
+              }`}
+            >
+              <Send className="size-3.5 shrink-0" />
+              {data.telegramReady ? t.admin.telegramOn : t.admin.telegramOff}
+            </p>
+            <ReservationsPanel reservations={data.reservations} onChanged={refresh} />
+          </>
         )}
-        {data && tab === "menu" && <MenuPanel items={data.menu as MenuItem[]} onChanged={refresh} />}
+        {data && tab === "menu" && (
+          <MenuPanel
+            items={data.menu}
+            localisationReady={data.localisationReady}
+            onChanged={refresh}
+          />
+        )}
         {data && tab === "settings" && data.settings && (
-          <SettingsPanel settings={data.settings} onChanged={refresh} />
+          <SettingsPanel
+            settings={data.settings}
+            localisationReady={data.localisationReady}
+            onChanged={refresh}
+          />
+        )}
+        {data && tab === "settings" && !data.settings && (
+          <p className="mt-12 text-sm text-muted-foreground">{t.admin.noSettingsRow}</p>
         )}
       </div>
     </div>
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Reservations                                                                */
+/* -------------------------------------------------------------------------- */
+
 function ReservationsPanel({
   reservations,
   onChanged,
 }: {
-  reservations: any[];
+  reservations: Reservation[];
   onChanged: () => void;
 }) {
+  const { t } = useI18n();
   const setStatus = useServerFn(adminSetReservationStatus);
-  const [filter, setFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | ReservationStatus>("all");
+  const [search, setSearch] = useState("");
 
   const mutation = useMutation({
-    mutationFn: (vars: { id: string; status: "pending" | "confirmed" | "cancelled" }) =>
-      setStatus({ data: vars }),
+    mutationFn: (vars: { id: string; status: ReservationStatus }) => setStatus({ data: vars }),
     onSuccess: () => {
-      toast.success("Reservation updated");
+      toast.success(t.admin.resUpdated);
       onChanged();
     },
-    onError: () => toast.error("Could not update the reservation"),
+    onError: () => toast.error(t.admin.resUpdateFailed),
   });
 
-  const rows = reservations.filter(
-    (r) =>
-      (!filter || r.reserved_date === filter) &&
-      (statusFilter === "all" || r.status === statusFilter),
+  const statusLabel = (status: string) =>
+    ({
+      all: t.admin.statusAll,
+      pending: t.admin.statusPending,
+      confirmed: t.admin.statusConfirmed,
+      cancelled: t.admin.statusCancelled,
+    })[status] ?? status;
+
+  const today = todayAtRestaurant();
+
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return reservations.filter(
+      (r) =>
+        (!dateFilter || r.reserved_date === dateFilter) &&
+        (statusFilter === "all" || r.status === statusFilter) &&
+        (!needle ||
+          r.full_name.toLowerCase().includes(needle) ||
+          r.phone.replace(/\s/g, "").includes(needle.replace(/\s/g, ""))),
+    );
+  }, [reservations, dateFilter, statusFilter, search]);
+
+  const stats = useMemo(
+    () => ({
+      today: reservations.filter((r) => r.reserved_date === today && r.status !== "cancelled")
+        .length,
+      pending: reservations.filter((r) => r.status === "pending").length,
+      upcoming: reservations.filter((r) => r.reserved_date >= today && r.status === "confirmed")
+        .length,
+      covers: reservations
+        .filter((r) => r.reserved_date === today && r.status !== "cancelled")
+        .reduce((sum, r) => sum + r.guests, 0),
+    }),
+    [reservations, today],
   );
 
   const badge = (status: string) =>
@@ -224,108 +369,162 @@ function ReservationsPanel({
         ? "border-destructive text-destructive"
         : "border-border text-muted-foreground";
 
+  const filtered = Boolean(dateFilter) || statusFilter !== "all" || Boolean(search);
+
   return (
     <div className="mt-10">
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat label={t.admin.statTables} value={stats.today} />
+        <Stat label={t.admin.statCovers} value={stats.covers} />
+        <Stat label={t.admin.statPending} value={stats.pending} accent={stats.pending > 0} />
+        <Stat label={t.admin.statUpcoming} value={stats.upcoming} />
+      </div>
+
+      <div className="mt-10 flex flex-wrap items-end gap-4">
         <div>
           <label className="eyebrow block" htmlFor="date-filter">
-            Date
+            {t.admin.filterDate}
           </label>
           <input
             id="date-filter"
             type="date"
             className={`${field} mt-2`}
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
           />
         </div>
         <div>
           <label className="eyebrow block" htmlFor="status-filter">
-            Status
+            {t.admin.filterStatus}
           </label>
           <select
             id="status-filter"
             className={`${field} mt-2`}
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
           >
-            {["all", "pending", "confirmed", "cancelled"].map((s) => (
+            {(["all", ...RESERVATION_STATUSES] as const).map((s) => (
               <option key={s} value={s} className="bg-card">
-                {s}
+                {statusLabel(s)}
               </option>
             ))}
           </select>
         </div>
-        {(filter || statusFilter !== "all") && (
+        <div className="min-w-[14rem] flex-1">
+          <label className="eyebrow block" htmlFor="guest-search">
+            {t.admin.filterSearch}
+          </label>
+          <input
+            id="guest-search"
+            className={`${field} mt-2`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t.admin.searchPlaceholder}
+          />
+        </div>
+        <button
+          type="button"
+          className={btnGhost}
+          onClick={() => setDateFilter(today)}
+          disabled={dateFilter === today}
+        >
+          {t.admin.today}
+        </button>
+        {filtered && (
           <button
             type="button"
             className={btnGhost}
             onClick={() => {
-              setFilter("");
+              setDateFilter("");
               setStatusFilter("all");
+              setSearch("");
             }}
           >
-            Clear
+            {t.admin.clear}
           </button>
         )}
       </div>
 
       <div className="mt-8 overflow-x-auto border border-border">
-        <table className="w-full min-w-[820px] text-left text-sm">
+        <table className="w-full min-w-[900px] text-left text-sm">
           <thead>
             <tr className="border-b border-border text-[0.55rem] tracking-[0.26em] text-muted-foreground uppercase">
-              <th className="px-5 py-4">Guest</th>
-              <th className="px-5 py-4">Phone</th>
-              <th className="px-5 py-4">When</th>
-              <th className="px-5 py-4">Party</th>
-              <th className="px-5 py-4">Notes</th>
-              <th className="px-5 py-4">Status</th>
-              <th className="px-5 py-4">Actions</th>
+              <th className="px-5 py-4">{t.admin.colGuest}</th>
+              <th className="px-5 py-4">{t.admin.colPhone}</th>
+              <th className="px-5 py-4">{t.admin.colWhen}</th>
+              <th className="px-5 py-4">{t.admin.colParty}</th>
+              <th className="px-5 py-4">{t.admin.colTable}</th>
+              <th className="px-5 py-4">{t.admin.colNotes}</th>
+              <th className="px-5 py-4">{t.admin.colStatus}</th>
+              <th className="px-5 py-4">{t.admin.colActions}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-b border-border last:border-0">
-                <td className="px-5 py-4">{r.full_name}</td>
-                <td className="px-5 py-4 text-muted-foreground">{r.phone}</td>
-                <td className="px-5 py-4 text-muted-foreground">
-                  {r.reserved_date} · {r.reserved_time}
-                </td>
-                <td className="px-5 py-4">{r.guests}</td>
-                <td className="max-w-[16rem] truncate px-5 py-4 text-muted-foreground">
-                  {r.notes || "—"}
-                </td>
-                <td className="px-5 py-4">
-                  <span
-                    className={`border px-3 py-1 text-[0.55rem] tracking-[0.22em] uppercase ${badge(r.status)}`}
-                  >
-                    {r.status}
-                  </span>
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className={btnGhost}
-                      onClick={() => mutation.mutate({ id: r.id, status: "confirmed" })}
+            {rows.map((r) => {
+              const busy = mutation.isPending && mutation.variables?.id === r.id;
+              return (
+                <tr key={r.id} className="border-b border-border last:border-0">
+                  <td className="px-5 py-4">{r.full_name}</td>
+                  <td className="px-5 py-4">
+                    <a
+                      href={`tel:${r.phone.replace(/\s/g, "")}`}
+                      className="text-muted-foreground transition-colors hover:text-gold"
                     >
-                      Confirm
-                    </button>
-                    <button
-                      type="button"
-                      className={btnGhost}
-                      onClick={() => mutation.mutate({ id: r.id, status: "cancelled" })}
+                      {r.phone}
+                    </a>
+                  </td>
+                  <td className="px-5 py-4 text-muted-foreground">
+                    {formatLongDate(r.reserved_date)} · {r.reserved_time}
+                  </td>
+                  <td className="px-5 py-4">{r.guests}</td>
+                  <td className="px-5 py-4">
+                    {r.table_code ? (
+                      <span className="numeric border border-gold/40 px-2.5 py-1 text-xs text-gold">
+                        {r.table_code}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">{t.admin.tableUnassigned}</span>
+                    )}
+                  </td>
+                  <td className="max-w-[18rem] px-5 py-4 text-muted-foreground">
+                    <span className="line-clamp-2" title={r.notes}>
+                      {r.notes || "—"}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <span
+                      className={`border px-3 py-1 text-[0.55rem] tracking-[0.22em] uppercase ${badge(r.status)}`}
                     >
-                      Cancel
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      {statusLabel(r.status)}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className={btnGhost}
+                        disabled={busy || r.status === "confirmed"}
+                        onClick={() => mutation.mutate({ id: r.id, status: "confirmed" })}
+                      >
+                        {t.admin.confirm}
+                      </button>
+                      <button
+                        type="button"
+                        className={btnGhost}
+                        disabled={busy || r.status === "cancelled"}
+                        onClick={() => mutation.mutate({ id: r.id, status: "cancelled" })}
+                      >
+                        {t.admin.cancel}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {!rows.length && (
               <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-muted-foreground">
-                  No reservations match these filters.
+                <td colSpan={8} className="px-5 py-10 text-center text-muted-foreground">
+                  {reservations.length ? t.admin.noMatch : t.admin.noReservations}
                 </td>
               </tr>
             )}
@@ -336,10 +535,33 @@ function ReservationsPanel({
   );
 }
 
-function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => void }) {
+function Stat({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+  return (
+    <div className={`border bg-card p-6 ${accent ? "border-gold/50" : "border-border"}`}>
+      <p className="eyebrow">{label}</p>
+      <p className="numeric mt-3 text-4xl">{value}</p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Menu                                                                        */
+/* -------------------------------------------------------------------------- */
+
+function MenuPanel({
+  items,
+  localisationReady,
+  onChanged,
+}: {
+  items: MenuItem[];
+  localisationReady: boolean;
+  onChanged: () => void;
+}) {
+  const { t } = useI18n();
   const saveDish = useServerFn(adminSaveDish);
   const deleteDish = useServerFn(adminDeleteDish);
   const [draft, setDraft] = useState<Partial<MenuItem>>(EMPTY_DISH);
+  const [pendingDelete, setPendingDelete] = useState<MenuItem | null>(null);
 
   const save = useMutation({
     mutationFn: () =>
@@ -348,6 +570,8 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
           ...(draft.id ? { id: draft.id } : {}),
           name: draft.name ?? "",
           description: draft.description ?? "",
+          description_uz: draft.description_uz ?? "",
+          description_ru: draft.description_ru ?? "",
           category: draft.category ?? "Main Courses",
           price: Number(draft.price ?? 0),
           image_url: draft.image_url ?? "",
@@ -357,39 +581,72 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
         },
       }),
     onSuccess: () => {
-      toast.success("Dish saved");
+      toast.success(draft.id ? t.admin.dishUpdated : t.admin.dishAdded);
       setDraft(EMPTY_DISH);
       onChanged();
     },
-    onError: () => toast.error("Please check the dish details"),
+    onError: () => toast.error(t.admin.dishSaveFailed),
   });
 
   const remove = useMutation({
     mutationFn: (id: string) => deleteDish({ data: { id } }),
     onSuccess: () => {
-      toast.success("Dish removed");
+      toast.success(t.admin.dishRemoved);
+      setPendingDelete(null);
       onChanged();
     },
+    onError: () => toast.error(t.admin.dishRemoveFailed),
   });
 
   return (
     <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_1.4fr]">
-      <div className="border border-border bg-card p-8">
-        <h2 className="font-display text-2xl">{draft.id ? "Edit dish" : "New dish"}</h2>
+      <div className="h-fit border border-border bg-card p-8 lg:sticky lg:top-8">
+        <h2 className="font-display text-2xl">{draft.id ? t.admin.editDish : t.admin.newDish}</h2>
         <div className="mt-6 space-y-5">
           <input
             className={field}
-            placeholder="Name"
+            placeholder={t.admin.dishName}
+            maxLength={120}
             value={draft.name ?? ""}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
           <textarea
             className={field}
             rows={3}
-            placeholder="Italian description"
+            maxLength={600}
+            placeholder={`${t.admin.dishDescription} — ${t.admin.langEn}`}
             value={draft.description ?? ""}
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           />
+          <div className="space-y-3 border-l border-border pl-4">
+            <p className="eyebrow">{t.admin.translations}</p>
+            {!localisationReady && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t.admin.translationsLocked}
+              </p>
+            )}
+            {localisationReady && (
+              <>
+                <textarea
+                  className={field}
+                  rows={3}
+                  maxLength={600}
+                  placeholder={`${t.admin.dishDescription} — ${t.admin.langUz}`}
+                  value={draft.description_uz ?? ""}
+                  onChange={(e) => setDraft({ ...draft, description_uz: e.target.value })}
+                />
+                <textarea
+                  className={field}
+                  rows={3}
+                  maxLength={600}
+                  placeholder={`${t.admin.dishDescription} — ${t.admin.langRu}`}
+                  value={draft.description_ru ?? ""}
+                  onChange={(e) => setDraft({ ...draft, description_ru: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">{t.admin.translationHint}</p>
+              </>
+            )}
+          </div>
           <select
             className={field}
             value={draft.category ?? "Main Courses"}
@@ -404,20 +661,33 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
           <input
             className={field}
             type="number"
-            placeholder="Price (so'm)"
+            min={0}
+            placeholder={t.admin.dishPrice}
             value={draft.price ?? 0}
             onChange={(e) => setDraft({ ...draft, price: Number(e.target.value) })}
           />
           <input
             className={field}
-            placeholder="Image URL"
+            type="url"
+            placeholder={t.admin.dishImage}
             value={draft.image_url ?? ""}
             onChange={(e) => setDraft({ ...draft, image_url: e.target.value })}
           />
+          {draft.image_url && (
+            <img
+              src={draft.image_url}
+              alt=""
+              className="aspect-[4/3] w-full border border-border object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          )}
           <input
             className={field}
             type="number"
-            placeholder="Sort order"
+            min={0}
+            placeholder={t.admin.dishSort}
             value={draft.sort_order ?? 0}
             onChange={(e) => setDraft({ ...draft, sort_order: Number(e.target.value) })}
           />
@@ -428,7 +698,7 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
                 checked={draft.available ?? true}
                 onChange={(e) => setDraft({ ...draft, available: e.target.checked })}
               />
-              Available
+              {t.admin.available}
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -436,21 +706,21 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
                 checked={draft.featured ?? false}
                 onChange={(e) => setDraft({ ...draft, featured: e.target.checked })}
               />
-              Hero special
+              {t.admin.heroSpecial}
             </label>
           </div>
           <div className="flex gap-3">
             <button
               type="button"
               className={btnGold}
-              disabled={save.isPending}
+              disabled={save.isPending || !draft.name}
               onClick={() => save.mutate()}
             >
-              {save.isPending ? "Saving…" : "Save dish"}
+              {save.isPending ? t.admin.saving : t.admin.saveDish}
             </button>
             {draft.id && (
               <button type="button" className={btnGhost} onClick={() => setDraft(EMPTY_DISH)}>
-                Cancel
+                {t.admin.cancelEdit}
               </button>
             )}
           </div>
@@ -461,12 +731,17 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
         {items.map((item) => (
           <div
             key={item.id}
-            className="flex items-center gap-5 border border-border bg-card p-4 transition-colors hover:border-gold/40"
+            className={`flex items-center gap-5 border bg-card p-4 transition-colors ${
+              draft.id === item.id ? "border-gold" : "border-border hover:border-gold/40"
+            }`}
           >
             <img
-              src={item.image_url}
-              alt={item.name}
+              {...responsiveImage(item.image_url, 80)}
+              alt=""
               loading="lazy"
+              decoding="async"
+              width={80}
+              height={80}
               className="size-20 shrink-0 object-cover"
             />
             <div className="min-w-0 flex-1">
@@ -477,68 +752,145 @@ function MenuPanel({ items, onChanged }: { items: MenuItem[]; onChanged: () => v
                 </span>
                 {!item.available && (
                   <span className="border border-destructive px-2 py-0.5 text-[0.5rem] tracking-[0.2em] text-destructive uppercase">
-                    Hidden
+                    {t.admin.hidden}
                   </span>
                 )}
                 {item.featured && (
                   <span className="border border-gold px-2 py-0.5 text-[0.5rem] tracking-[0.2em] text-gold uppercase">
-                    Hero
+                    {t.admin.heroBadge}
                   </span>
                 )}
               </div>
               <p className="mt-1 truncate text-xs text-muted-foreground">{item.description}</p>
-              <p className="mt-1 text-sm text-gold">{formatSom(Number(item.price))}</p>
+              <p className="numeric mt-1 text-sm text-gold">{formatSom(Number(item.price))}</p>
             </div>
             <div className="flex shrink-0 gap-2">
               <button type="button" className={btnGhost} onClick={() => setDraft(item)}>
-                Edit
+                {t.admin.edit}
               </button>
               <button
                 type="button"
-                aria-label={`Delete ${item.name}`}
+                aria-label={fmt(t.admin.deleteAria, { dish: item.name })}
                 className="border border-border p-2.5 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
-                onClick={() => remove.mutate(item.id)}
+                onClick={() => setPendingDelete(item)}
               >
                 <Trash2 className="size-4" />
               </button>
             </div>
           </div>
         ))}
+        {!items.length && (
+          <p className="border border-border bg-card p-8 text-sm text-muted-foreground">
+            {t.admin.emptyCarta}
+          </p>
+        )}
       </div>
+
+      {/* Deleting a dish is not undoable, so never let one stray click do it. */}
+      <AlertDialog
+        open={Boolean(pendingDelete)}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
+        <AlertDialogContent className="border-border bg-card sm:rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display text-2xl font-normal">
+              {fmt(t.admin.deleteTitle, { dish: pendingDelete?.name ?? "" })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t.admin.deleteBody}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={remove.isPending}>{t.admin.deleteKeep}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={remove.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (pendingDelete) remove.mutate(pendingDelete.id);
+              }}
+            >
+              {remove.isPending ? t.admin.deleting : t.admin.deleteConfirm}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function SettingsPanel({ settings, onChanged }: { settings: any; onChanged: () => void }) {
+/* -------------------------------------------------------------------------- */
+/* Settings                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function SettingsPanel({
+  settings,
+  localisationReady,
+  onChanged,
+}: {
+  settings: SiteSettings;
+  localisationReady: boolean;
+  onChanged: () => void;
+}) {
+  const { t } = useI18n();
   const saveSettings = useServerFn(adminSaveSettings);
-  const [form, setForm] = useState({
+  const initialForm = () => ({
     hero_title: settings.hero_title,
+    hero_title_uz: settings.hero_title_uz ?? "",
+    hero_title_ru: settings.hero_title_ru ?? "",
     phone: settings.phone,
     address: settings.address,
+    address_uz: settings.address_uz ?? "",
+    address_ru: settings.address_ru ?? "",
     hours: settings.hours,
+    hours_uz: settings.hours_uz ?? "",
+    hours_ru: settings.hours_ru ?? "",
     instagram: settings.instagram,
   });
+  const [form, setForm] = useState(initialForm);
 
   const save = useMutation({
     mutationFn: () => saveSettings({ data: form }),
     onSuccess: () => {
-      toast.success("Settings saved");
+      toast.success(t.admin.settingsSaved);
       onChanged();
     },
-    onError: () => toast.error("Please check the values"),
+    onError: () => toast.error(t.admin.settingsFailed),
   });
 
-  const FIELDS: { key: keyof typeof form; label: string }[] = [
-    { key: "hero_title", label: "Hero banner label" },
-    { key: "phone", label: "Phone" },
-    { key: "address", label: "Address" },
-    { key: "hours", label: "Operating hours" },
-    { key: "instagram", label: "Instagram handle" },
+  const FIELDS: {
+    key: keyof typeof form;
+    label: string;
+    hint?: string;
+    localised?: boolean;
+  }[] = [
+    {
+      key: "hero_title",
+      label: t.admin.fHeroTitle,
+      hint: t.admin.fHeroHint,
+      localised: true,
+    },
+    {
+      key: "phone",
+      label: t.admin.fPhone,
+      hint: t.admin.fPhoneHint,
+    },
+    { key: "address", label: t.admin.fAddress, localised: true },
+    { key: "hours", label: t.admin.fHours, localised: true },
+    { key: "instagram", label: t.admin.fInstagram, hint: t.admin.fInstagramHint },
   ];
+
+  const pristine = initialForm();
+  const dirty = (Object.keys(form) as (keyof typeof form)[]).some(
+    (key) => form[key] !== pristine[key],
+  );
 
   return (
     <div className="mt-10 max-w-xl border border-border bg-card p-8">
-      <h2 className="font-display text-2xl">Site settings</h2>
+      <h2 className="font-display text-2xl">{t.admin.settingsTitle}</h2>
+      <p className="mt-2 text-sm text-muted-foreground">{t.admin.settingsBody}</p>
+      {!localisationReady && (
+        <p className="mt-3 border border-border px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          {t.admin.translationsLocked}
+        </p>
+      )}
       <div className="mt-6 space-y-5">
         {FIELDS.map((f) => (
           <div key={f.key}>
@@ -551,16 +903,41 @@ function SettingsPanel({ settings, onChanged }: { settings: any; onChanged: () =
               value={form[f.key]}
               onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
             />
+            {f.hint && <p className="mt-2 text-xs text-muted-foreground">{f.hint}</p>}
+            {f.localised && localisationReady && (
+              <div className="mt-3 space-y-3 border-l border-border pl-4">
+                <input
+                  className={field}
+                  placeholder={`${f.label} — ${t.admin.langUz}`}
+                  value={form[`${f.key}_uz` as keyof typeof form]}
+                  onChange={(e) => setForm({ ...form, [`${f.key}_uz`]: e.target.value })}
+                />
+                <input
+                  className={field}
+                  placeholder={`${f.label} — ${t.admin.langRu}`}
+                  value={form[`${f.key}_ru` as keyof typeof form]}
+                  onChange={(e) => setForm({ ...form, [`${f.key}_ru`]: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">{t.admin.translationHint}</p>
+              </div>
+            )}
           </div>
         ))}
-        <button
-          type="button"
-          className={btnGold}
-          disabled={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {save.isPending ? "Saving…" : "Save settings"}
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            className={btnGold}
+            disabled={save.isPending || !dirty}
+            onClick={() => save.mutate()}
+          >
+            {save.isPending ? t.admin.saving : t.admin.settingsSave}
+          </button>
+          {dirty && (
+            <button type="button" className={btnGhost} onClick={() => setForm(initialForm())}>
+              {t.admin.settingsReset}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

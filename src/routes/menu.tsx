@@ -2,35 +2,30 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { MenuGrid } from "@/components/MenuGrid";
 import { SectionHeading } from "@/components/Reveal";
+import { headDict, useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/menu")({
-  head: () => ({
-    meta: [
-      { title: "Menu — Gracia Family Italian Restaurant" },
-      {
-        name: "description",
-        content:
-          "Starters, hand-rolled pasta, wood-fired pizza, main courses, dolci and drinks at Gracia Family in Andijan.",
-      },
-      { property: "og:title", content: "Menu — Gracia Family" },
-      {
-        property: "og:description",
-        content: "Explore the full Italian carta: antipasti, pasta, pizza, secondi and dolci.",
-      },
-    ],
-  }),
+  head: ({ match }) => {
+    const t = headDict(match);
+    return {
+      meta: [
+        { title: t.meta.menuTitle },
+        { name: "description", content: t.meta.menuDescription },
+        { property: "og:title", content: t.meta.menuTitle },
+        { property: "og:description", content: t.meta.menuDescription },
+      ],
+    };
+  },
   component: MenuPage,
 });
 
 function MenuPage() {
+  const { t } = useI18n();
+
   return (
     <section className="pt-40 pb-28">
       <div className="mx-auto max-w-[1400px] px-6 lg:px-10">
-        <SectionHeading
-          eyebrow="La Carta"
-          title="The full menu"
-          intro="Filter by course. Everything is cooked to order, so the kitchen asks for a little patience."
-        />
+        <SectionHeading eyebrow={t.menu.eyebrow} title={t.menu.title} intro={t.menu.intro} />
         <div className="mt-16">
           <MenuGrid />
         </div>

@@ -1,6 +1,13 @@
-import { motion } from "motion/react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+/**
+ * Fades a block up as it scrolls into view.
+ *
+ * This used to be a Motion component. A page carries around twenty of them, and
+ * an IntersectionObserver plus a CSS transition does the same job without the
+ * animation engine tracking every one — which also keeps Motion out of the
+ * bundle entirely on the pages that have no carousel.
+ */
 export function Reveal({
   children,
   delay = 0,
@@ -10,16 +17,45 @@ export function Reveal({
   delay?: number;
   className?: string;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || shown) return;
+
+    // Anything that can't observe simply gets the content — never a page that
+    // stays invisible forever.
+    if (typeof IntersectionObserver === "undefined") {
+      setShown(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShown(true);
+          observer.disconnect();
+        }
+      },
+      // Matches the old `viewport={{ margin: "-80px" }}`: start a little after
+      // the block's edge enters, not the instant it does.
+      { rootMargin: "-80px 0px" },
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [shown]);
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 34 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.8, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={className}
+    <div
+      ref={ref}
+      data-shown={shown}
+      className={`reveal ${className ?? ""}`}
+      style={delay ? ({ "--reveal-delay": `${delay}s` } as CSSProperties) : undefined}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 

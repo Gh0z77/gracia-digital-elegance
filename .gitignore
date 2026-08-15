@@ -16,9 +16,21 @@ dist-ssr
 .nitro
 *.local
 
+# Secrets. `.env` stays tracked because it holds only the public Supabase keys;
+# anything that can write to the database must never be committed.
+.env.local
+.env.*.local
+.env.production
+
+# Supabase CLI link state (project ref + pooler details), machine-local.
+supabase/.temp/
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+
+# Vercel build output and local link state
+.vercel/
 
 # Editor directories and files
 .vscode/*

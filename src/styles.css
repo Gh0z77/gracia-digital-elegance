@@ -19,8 +19,8 @@
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
 
-  --font-display: "Cormorant Garamond", "Times New Roman", serif;
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -133,6 +133,7 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-weight: 400;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -140,11 +141,25 @@
     background: var(--gold);
     color: var(--primary-foreground);
   }
+
+  /* Lucide ships 2px strokes. 1.5 keeps the icons visible against Fraunces'
+     weight without turning them into the heaviest thing on the page. */
+  .lucide {
+    stroke-width: 1.5;
+  }
 }
 
 @utility font-display {
   font-family: var(--font-display);
-  font-weight: 300;
+  /* Fraunces carries four axes. opsz is handled automatically by size; SOFT
+     rounds the terminals so the serif reads warm instead of severe, and WONK
+     stays off — its cocked alternates are charming but too loose for a menu. */
+  font-optical-sizing: auto;
+  font-variation-settings:
+    "SOFT" 28,
+    "WONK" 0;
+  font-weight: 600;
+  letter-spacing: -0.012em;
 }
 
 @utility text-gradient-gold {
@@ -195,6 +210,375 @@
   }
   &:hover::after {
     width: 100%;
+  }
+}
+
+/* Scroll-reveal and page transitions used to be JavaScript animations running on
+   twenty-odd elements per page. As plain CSS they cost nothing at runtime and
+   keep the animation engine off pages that have no carousel. */
+@utility reveal {
+  opacity: 0;
+  transform: translateY(34px);
+  transition:
+    opacity 0.8s var(--ease-lux),
+    transform 0.8s var(--ease-lux);
+  transition-delay: var(--reveal-delay, 0s);
+
+  &[data-shown="true"] {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility page-enter {
+  animation: page-enter 0.45s var(--ease-lux) both;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Numbers get the grotesque rather than the serif. Fraunces' figures are wide
+   and old-style, which fights the precision a price wants; DM Sans set in
+   tabular figures also stops the slide counter jittering as digits change. */
+@utility numeric {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings:
+    "tnum" 1,
+    "lnum" 1;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Carousel transition — dishes ride a turntable.
+ *
+ * Each one rises into place from below while the one it replaces carries on up
+ * and over the top. The outgoing half is deliberately quicker and its fade is
+ * front-loaded, so the two are never both sitting at half opacity — that is
+ * what made the earlier crossfades look like a rendering fault.
+ */
+.slide-exit,
+.plate-exit {
+  will-change: transform, opacity;
+}
+
+/* The plate rides a turntable: it rises into place from below, and the one it
+ * replaces keeps going up and over the top. The in-plane spin plus the scale
+ * change are what sell the wheel — a dish further round the table is smaller
+ * and turned, and it grows and straightens as it comes to the front.
+ *
+ * Transform and opacity are separate animations on purpose, each with its own
+ * duration and delay. The outgoing plate leaves slowly at first, so its fade is
+ * both short and `ease-out` — it is gone within a quarter second, while it is
+ * still near its old position. The incoming fade waits out that window before
+ * it starts. Without the split the two sit on top of each other at half
+ * opacity, which reads as a rendering fault rather than a transition.
+ *
+ * Every keyframe has exactly two stops. A midpoint stop re-applies the timing
+ * function on each side of it, which decelerates the motion to a standstill in
+ * the middle — that was the stutter in the earlier arc version.
+ */
+.plate-enter {
+  animation:
+    turn-in 0.75s cubic-bezier(0.21, 0.87, 0.31, 1) 0.05s both,
+    cross-in 0.42s ease-out 0.16s both;
+}
+
+.plate-exit {
+  animation:
+    turn-out 0.55s cubic-bezier(0.5, 0, 0.75, 0.45) both,
+    cross-out 0.26s ease-out both;
+}
+
+.slide-enter {
+  animation:
+    copy-in 0.6s cubic-bezier(0.21, 0.87, 0.31, 1) 0.08s both,
+    cross-in 0.38s ease-out 0.16s both;
+}
+
+.slide-exit {
+  animation:
+    copy-out 0.42s cubic-bezier(0.5, 0, 0.75, 0.45) both,
+    cross-out 0.22s ease-out both;
+}
+
+@keyframes turn-in {
+  from {
+    transform: translateY(58%) rotate(-30deg) scale(0.72);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes turn-out {
+  from {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  to {
+    transform: translateY(-58%) rotate(30deg) scale(0.72);
+  }
+}
+
+@keyframes copy-in {
+  from {
+    transform: translateY(30%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes copy-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-24%);
+  }
+}
+
+@keyframes cross-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cross-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Hero spotlight — the carousel runs on keyframes so the home page ships no
+   animation engine either. Slides are keyed by dish id in React, so each change
+   remounts the element and replays its entrance. */
+.hero-rings {
+  animation: hero-spin 90s linear infinite;
+}
+
+.hero-eyebrow {
+  opacity: 0;
+  animation: fade-in 0.8s ease-out 0.2s forwards;
+}
+
+.hero-copy {
+  animation: hero-copy-in 0.6s var(--ease-lux) both;
+}
+
+/* Two nested elements: both of these drive `transform`, so one entrance and one
+   endless float cannot live on the same node. */
+.hero-plate-enter {
+  animation: hero-plate-next 0.8s var(--ease-lux) both;
+}
+
+.hero-plate-enter[data-dir="-1"] {
+  animation-name: hero-plate-prev;
+}
+
+.hero-plate-float {
+  animation: hero-float 7s ease-in-out infinite;
+}
+
+.card-enter {
+  animation: hero-copy-in 0.55s var(--ease-lux) both;
+  animation-delay: var(--card-delay, 0s);
+}
+
+/* Reservation form: the swap between the form and the confirmation panel. */
+.panel-enter {
+  animation: panel-in 0.6s var(--ease-lux) both;
+}
+
+.check-pop {
+  /* Overshooting curve in place of the old spring. */
+  animation: check-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.15s both;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes check-pop {
+  from {
+    opacity: 0;
+    transform: scale(0) rotate(-40deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hero-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hero-copy-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hero-plate-next {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(-22deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hero-plate-prev {
+  from {
+    opacity: 0;
+    transform: scale(0.82) rotate(22deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+/* Intro curtain — the whole sequence in CSS so the animation engine never has
+   to load on pages that only fade things in. */
+.intro-curtain {
+  opacity: 1;
+  transition: opacity 0.45s var(--ease-lux);
+}
+
+.intro-curtain[data-done="true"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.intro-stroke {
+  /* The glyph outline is shorter than this, so the draw completes a little
+     before the keyframe ends — which reads better than a stroke that only
+     lands on the final frame. */
+  stroke-dasharray: 2400;
+  stroke-dashoffset: 2400;
+  animation: logo-draw 0.8s ease-in-out forwards;
+}
+
+.intro-fill {
+  opacity: 0;
+  animation: fade-in 0.6s ease-out 0.3s forwards;
+}
+
+.intro-tagline {
+  opacity: 0;
+  animation: rise-in 0.4s var(--ease-lux) 0.5s forwards;
+}
+
+.intro-rule {
+  width: 0;
+  animation: rule-grow 0.4s var(--ease-lux) 0.6s forwards;
+}
+
+@keyframes logo-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rule-grow {
+  to {
+    width: 160px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .page-enter {
+    animation: none;
+  }
+
+  /* Skip straight to the finished state rather than animating it. */
+  .intro-stroke,
+  .intro-fill,
+  .intro-tagline,
+  .intro-rule,
+  .hero-eyebrow,
+  .hero-copy,
+  .hero-plate-enter,
+  .card-enter,
+  .panel-enter,
+  .check-pop,
+  .slide-enter,
+  .slide-exit,
+  .plate-enter,
+  .plate-exit {
+    animation-duration: 0.01ms;
+    animation-delay: 0ms;
+  }
+
+  /* The endless ones simply stop. */
+  .hero-rings,
+  .hero-plate-float {
+    animation: none;
   }
 }
 

@@ -20,6 +20,8 @@ export type Database = {
           category: string
           created_at: string
           description: string
+          description_ru: string
+          description_uz: string
           featured: boolean
           id: string
           image_url: string
@@ -33,6 +35,8 @@ export type Database = {
           category?: string
           created_at?: string
           description?: string
+          description_ru?: string
+          description_uz?: string
           featured?: boolean
           id?: string
           image_url?: string
@@ -46,6 +50,8 @@ export type Database = {
           category?: string
           created_at?: string
           description?: string
+          description_ru?: string
+          description_uz?: string
           featured?: boolean
           id?: string
           image_url?: string
@@ -67,6 +73,7 @@ export type Database = {
           reserved_date: string
           reserved_time: string
           status: string
+          table_code: string | null
         }
         Insert: {
           created_at?: string
@@ -78,6 +85,7 @@ export type Database = {
           reserved_date: string
           reserved_time: string
           status?: string
+          table_code?: string | null
         }
         Update: {
           created_at?: string
@@ -89,14 +97,21 @@ export type Database = {
           reserved_date?: string
           reserved_time?: string
           status?: string
+          table_code?: string | null
         }
         Relationships: []
       }
       site_settings: {
         Row: {
           address: string
+          address_ru: string
+          address_uz: string
           hero_title: string
+          hero_title_ru: string
+          hero_title_uz: string
           hours: string
+          hours_ru: string
+          hours_uz: string
           id: number
           instagram: string
           phone: string
@@ -104,8 +119,14 @@ export type Database = {
         }
         Insert: {
           address?: string
+          address_ru?: string
+          address_uz?: string
           hero_title?: string
+          hero_title_ru?: string
+          hero_title_uz?: string
           hours?: string
+          hours_ru?: string
+          hours_uz?: string
           id?: number
           instagram?: string
           phone?: string
@@ -113,8 +134,14 @@ export type Database = {
         }
         Update: {
           address?: string
+          address_ru?: string
+          address_uz?: string
           hero_title?: string
+          hero_title_ru?: string
+          hero_title_uz?: string
           hours?: string
+          hours_ru?: string
+          hours_uz?: string
           id?: number
           instagram?: string
           phone?: string
